@@ -12,8 +12,7 @@ int motorB ; // motor kanan
 int motorA ; // motor kiri
 
 float Kp = 1.5; //ubah
-float Kd = 5; //ubah
-
+float Kd = 5.0; //ubah
 
 int adcMakerLine = 0;
 int adcSetPoint = 0;
@@ -58,10 +57,10 @@ void loop()
 
     adcMakerLine = analogRead(MAKERLINE_AN);
 
-  /*  if (adcMakerLine < 51) { // Out of line
-      robotMove(0, 0);
-    }
-    else */ if (adcMakerLine > 972) { // Detects cross line
+    /*  if (adcMakerLine < 51) { // Out of line
+        robotMove(0, 0);
+      }
+      else */ if (adcMakerLine > 972) { // Detects cross line
       robotMove(MAX_SPEED - 25, MAX_SPEED - 25);
     }
     else {
@@ -97,7 +96,7 @@ void loop()
       Serial.println(motorRight);
       Serial.print("\tPD:\t");
       Serial.println(powerDifference);
-            Serial.print("\tST:\t");
+      Serial.print("\tST:\t");
       Serial.println(adcSetPoint);
     }
   }

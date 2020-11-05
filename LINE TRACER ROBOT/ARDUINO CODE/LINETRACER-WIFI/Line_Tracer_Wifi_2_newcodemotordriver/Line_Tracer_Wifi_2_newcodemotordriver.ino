@@ -11,15 +11,12 @@ int DB = 2; //motor kanan
 int motorB ; // motor kanan
 int motorA ; // motor kiri
 
-float Kp = 1.5; //ubah
-float Kd = 5; //ubah
-
 
 int adcMakerLine = 0;
 int adcSetPoint = 0;
-int proportional = 0;
+int proportional = 0.11;
 int lastProportional = 0;
-int derivative = 0;
+int derivative = 8;
 int powerDifference = 0;
 int motorLeft = 0;
 int motorRight = 0;
@@ -69,7 +66,7 @@ void loop()
       derivative = proportional - lastProportional;
       lastProportional = proportional;
 
-      powerDifference = (proportional * Kp) + (derivative * Kd);
+      powerDifference = (proportional * 1.5) + (derivative * 5);
 
       if (powerDifference > MAX_SPEED) {
         powerDifference = MAX_SPEED;
@@ -109,18 +106,26 @@ void robotMove(int speedLeft, int speedRight)
   speedRight = constrain(speedRight, -1023, 1023);
 
   if (speedLeft > 0) {
+    int speedL = map(speedLeft, 0, 1023, 1023, 0);
     digitalWrite(DA, LOW); //FORWARD
+    analogWrite(PWMA, speedL);
   }
   else {
+    int speedL = map(speedLeft, -1023, 0, 0, 1023);
     digitalWrite(DA, HIGH); //REVERSE
+    analogWrite(PWMA, speedL);
   }
 
   if (speedRight > 0) {
+    int speedR = map(speedRight, 0, 1023, 1023, 0);
     digitalWrite(DB, LOW); //FORWARD
+    analogWrite(PWMB, speedR);
   }
   else {
+    int speedR = map(speedRight, -1023, 0, 0, 1023);
     digitalWrite(DB, HIGH); // REVERSE
+    analogWrite(PWMB, speedR);
   }
-  analogWrite(PWMA, abs(speedLeft));
-  analogWrite(PWMB, abs(speedRight));
+  // analogWrite(PWMA, abs(speedLeft));
+  //analogWrite(PWMB, abs(speedRight));
 }

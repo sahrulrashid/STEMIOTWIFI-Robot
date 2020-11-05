@@ -1,6 +1,9 @@
 #include <FS.h>                   //this needs to be first, or it all crashes and burns...
 
+#define BLYNK_PRINT Serial    // Comment this out to disable prints and save space
+
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+#include <BlynkSimpleEsp8266.h>
 //needed for library
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
@@ -17,11 +20,13 @@
 #define DRD_ADDRESS 0
 DoubleResetDetector drd(DRD_TIMEOUT, DRD_ADDRESS);
 //end
+SimpleTimer timer;
+WidgetLED wledSTAT(V5);
 
 //define your default values here, if there are different values in config.json, they are overwritten.
-char mqtt_server[40] = "";
-char mqtt_port[6] = "";
-char blynk_token[34] = "";
+char mqtt_server[40] = "blynk-cloud.com";
+char mqtt_port[6] = "80";
+char blynk_token[34] = "7WZ8hKTOM_abcU6hMoUd1NrfnjIZ3CC2";
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -53,13 +58,13 @@ int motorB ; // motor kanan
 int motorA ; // motor kiri
 
 float Kp = 1.5; //ubah
-float Kd = 5.0; //ubah
+float Kd = 5; //ubah
 
 int adcMakerLine = 0;
 int adcSetPoint = 0;
-float proportional = 0;
+int proportional = 0;
 int lastProportional = 0;
-float derivative = 0;
+int derivative = 0;
 int powerDifference = 0;
 int motorLeft = 0;
 int motorRight = 0;
@@ -73,6 +78,39 @@ void tick()
   //toggle state
   digitalWrite(LED, !digitalRead(LED));     // set pin to the opposite state
 }
+
+void reconnectBlynk() {                         // reconnect to server if disconnected
+  if (!Blynk.connected()) {
+    ticker.attach(0.2, tick);
+    if (Blynk.connect()) {
+      ticker.detach();
+      BLYNK_LOG("Reconnected");
+    } else {
+      BLYNK_LOG("Not reconnected");
+    }
+  }
+}
+
+
+BLYNK_CONNECTED() {
+  if (isFirstConnect) {
+    Blynk.syncAll();
+    // Blynk.notify("LET'S GO MATE!!!!");
+    isFirstConnect = false;
+  }
+}
+
+void blinkSTATLedWidget()
+{
+  if (wledSTAT.getValue()) {
+    //send off to led controller
+    wledSTAT.off();
+  } else {
+    //send on to led controller
+    wledSTAT.on();
+  }
+}
+
 
 
 //callback notifying us of the need to save config
@@ -251,94 +289,113 @@ void setup() {
 
   //Serial.println("local ip");
   //Serial.println(WiFi.localIP());
+  Blynk.config(blynk_token, mqtt_server, 80);
+  bool result = Blynk.connect();
+  int mytimeout = millis() / 1000;
+  while (Blynk.connect(1000) == false) {        // wait here until connected to the server
+    if ((millis() / 1000) > mytimeout + 8) {    // try to connect to the server for less than 9 seconds
+      Serial.println(F("BLYNK Connection Fail"));
+      Serial.println(blynk_token);
+      wifiManager.resetSettings();
+      ESP.reset();
+      //ESP.restart();
+      //  delay (5000);
+      /*   wifiManager.setConfigPortalTimeout(180);
+        if (!wifiManager.startConfigPortal(OTAhost)) {
+         Serial.println("failed to connect and hit timeout");
+         delay(3000);
+         //reset and try again, or maybe put it to deep sleep
+         //ESP.restart();
+         ESP.reset();
+         delay(5000);
+        }*/
+    }
+    else
+    {
+      Serial.println(F("BLYNK Connected"));
+    }
+  }
 
+  Serial.println(blynk_token);
   ArduinoOTA.setHostname(OTAhost);              // for local OTA updates
   ArduinoOTA.begin();
 
-    // Place robot at the center of line
+  timer.setInterval(15000, reconnectBlynk); // check every 15 seconds if we are connected to the server
+  timer.setInterval(2000, blinkSTATLedWidget);
+
+  // Place robot at the center of line
   adcSetPoint = analogRead(MAKERLINE_AN);
   delay(2000);
 }
 
 
 
+BLYNK_WRITE(V4)//      slider  from 600 to 1023!!!!
+{
+  float vel = param.asInt();
+  Kp = vel;
+}
+/*
+  BLYNK_WRITE(V5)//      slider  from 600 to 1023!!!!
+  {
+  int speedz = param.asInt();
+  MAX_SPEED = speedz;
+  }
+*/
+
+BLYNK_WRITE(V6)//      slider  from 600 to 1023!!!!
+{
+  float fac = param.asInt();
+  Kd = fac;
+}
+
+BLYNK_READ(V10)//      slider  from 600 to 1023!!!!
+{
+  Blynk.virtualWrite(V10, Kp);
+}
+
+BLYNK_READ(V11)//      slider  from 600 to 1023!!!!
+{
+  Blynk.virtualWrite(V11, Kd);
+}
+
+
+
 void loop() {
 
-   ArduinoOTA.handle();       // for local OTA updates
-
-//--------LFR--------------
-   currentMillis = millis();
-  if (currentMillis - previousMillis > interval) {
-    previousMillis = currentMillis;
-
-    adcMakerLine = analogRead(MAKERLINE_AN);
-
-  /*  if (adcMakerLine < 51) { // Out of line
-      robotMove(0, 0);
-    }
-    else*/ if (adcMakerLine > 972) { // Detects cross line
-      robotMove(MAX_SPEED - 25, MAX_SPEED - 25);
-    }
-    else {
-      proportional = adcMakerLine - adcSetPoint;
-      derivative = proportional - lastProportional;
-      lastProportional = proportional;
-
-      powerDifference = (proportional * Kp) + (derivative * Kd);
-
-      if (powerDifference > MAX_SPEED) {
-        powerDifference = MAX_SPEED;
-      }
-      if (powerDifference < -MAX_SPEED) {
-        powerDifference = -MAX_SPEED;
-      }
-
-      if (powerDifference < 0) {
-        motorLeft = MAX_SPEED + powerDifference;
-        motorRight = MAX_SPEED;
-      }
-      else {
-        motorLeft = MAX_SPEED;
-        motorRight = MAX_SPEED - powerDifference;
-      }
-
-      robotMove(motorLeft, motorRight);
-/*
-      Serial.print("ADC:\t");
-      Serial.print(adcMakerLine);
-      Serial.print("\tMotor Left:\t");
-      Serial.print(motorLeft);
-      Serial.print("\tMotor Right:\t");
-      Serial.println(motorRight);
-      Serial.print("\tPD:\t");
-      Serial.println(powerDifference);
-            Serial.print("\tST:\t");
-      Serial.println(adcSetPoint);
-        */
-    }
+  if (Blynk.connected()) {   // to ensure that Blynk.run() function is only called if we are still connected to the server
+    Blynk.run();
   }
+  timer.run();
+  ArduinoOTA.handle();       // for local OTA updates
 
-  //----------------------------
+  //--------LFR--------------
+
+  adcMakerLine = analogRead(MAKERLINE_AN);
+
+
+  proportional = adcMakerLine - adcSetPoint;
+
+  derivative = proportional - lastProportional;
+
+  lastProportional = proportional;
+
+  powerDifference = (proportional * Kp) + (derivative * Kd);
+
+
+  motorLeft = MAX_SPEED + powerDifference;
+
+  motorRight = MAX_SPEED - powerDifference;
+
+  motorLeft = constrain(motorLeft, 0, MAX_SPEED);
+  motorRight = constrain(motorRight, 0, MAX_SPEED);
+
+  digitalWrite(DA, LOW); //FORWARD
+  analogWrite(PWMA, motorLeft);
+  digitalWrite(DB, LOW); //FORWARD
+  analogWrite(PWMB, motorRight);
+
 }
+// }
 
-void robotMove(int speedLeft, int speedRight)
-{
-  speedLeft = constrain(speedLeft, -1023, 1023);
-  speedRight = constrain(speedRight, -1023, 1023);
-
-  if (speedLeft > 0) {
-    digitalWrite(DA, LOW); //FORWARD
-  }
-  else {
-    digitalWrite(DA, HIGH); //REVERSE
-  }
-
-  if (speedRight > 0) {
-    digitalWrite(DB, LOW); //FORWARD
-  }
-  else {
-    digitalWrite(DB, HIGH); // REVERSE
-  }
-  analogWrite(PWMA, abs(speedLeft));
-  analogWrite(PWMB, abs(speedRight));
-}
+//----------------------------
